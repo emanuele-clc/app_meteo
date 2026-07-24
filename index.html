@@ -97,16 +97,25 @@
   .chart .c-top span{font-size:12px;color:var(--muted)}
   .chart svg{width:100%;height:96px;display:block;overflow:visible}
   .chart .c-lab{display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)}
-  .hours{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+  .hours{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
   .hours::-webkit-scrollbar{display:none}
+  .hour{scroll-snap-align:start}
+  .h-slider{-webkit-appearance:none;appearance:none;width:calc(100% - 4px);height:7px;border-radius:5px;margin:4px 2px 0;
+    background:rgba(255,255,255,.13);outline:none;cursor:pointer}
+  .h-slider::-webkit-slider-thumb{-webkit-appearance:none;width:34px;height:16px;border-radius:9px;
+    background:linear-gradient(180deg,#a8c0ff,#4a7bff);box-shadow:0 2px 10px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.4);cursor:grab}
+  .h-slider::-moz-range-thumb{width:34px;height:16px;border:none;border-radius:9px;background:#5a86ff;cursor:grab}
   .hour{flex:0 0 auto;width:64px;text-align:center;background:var(--card);border:1px solid var(--card-brd);border-radius:18px;padding:13px 6px;backdrop-filter:blur(16px)}
   .hour .h-t{font-size:11px;color:var(--muted)}
   .hour .h-ic{font-size:23px;margin:7px 0}
   .hour .h-tp{font-size:14px;font-weight:700}
   .hour .h-pp{font-size:10px;color:var(--accent);margin-top:3px;min-height:13px}
   .days{padding:6px 18px}
-  .days .day{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .days .day{display:flex;align-items:center;gap:12px;padding:12px 8px;margin:0 -8px;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer;border-radius:12px;transition:background .15s}
   .days .day:last-child{border-bottom:none}
+  .days .day:active{background:rgba(255,255,255,.06)}
+  .days .day.sel{background:rgba(157,185,255,.16)}
+  .day .d-go{width:10px;text-align:right;color:var(--muted);font-size:15px}
   .day .d-n{width:52px;font-size:14px;font-weight:600}
   .day .d-ic{font-size:23px;width:30px;text-align:center}
   .day .d-pp{width:44px;font-size:12px;color:var(--accent);text-align:right}
@@ -320,6 +329,31 @@ async function aiAdvice(d,place){
   }catch(e){console.warn(e);return null;}
 }
 
+/* ---- ore per giorno ---- */
+function buildHoursHTML(d,indices,firstIsNow){
+  let html="";
+  indices.forEach((i,k)=>{
+    const hd=new Date(d.hourly.time[i]),hw=wmo(d.hourly.weather_code[i],d.hourly.is_day[i]),pp=d.hourly.precipitation_probability[i]??0;
+    const lab=(firstIsNow&&k===0)?'Adesso':(String(hd.getHours()).padStart(2,'0')+':00');
+    html+=`<div class="hour"><div class="h-t">${lab}</div><div class="h-ic">${hw.i}</div><div class="h-tp">${cvt(d.hourly.temperature_2m[i])}°</div><div class="h-pp">${pp>=10?'💧'+pp+'%':''}</div></div>`;
+  });
+  return html;
+}
+function dayIndices(d,n){
+  if(n===0){const now=new Date();let s=d.hourly.time.findIndex(t=>new Date(t)>=now);if(s<0)s=0;const a=[];for(let i=s;i<s+24&&i<d.hourly.time.length;i++)a.push(i);return a;}
+  const date=d.daily.time[n],a=[];d.hourly.time.forEach((t,i)=>{if(t.slice(0,10)===date)a.push(i);});return a;
+}
+function selectDay(n){
+  const d=STATE&&STATE.d;if(!d)return;
+  const hz=$('#hours');if(!hz)return;
+  hz.innerHTML=buildHoursHTML(d,dayIndices(d,n),n===0);
+  hz.scrollLeft=0;const hs=$('#hSlider');if(hs)hs.value=0;
+  const full=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+  const t=$('#hoursTitle');
+  if(t){if(n===0)t.textContent='Oggi · ora per ora';else{const dd=new Date(d.daily.time[n]);t.textContent=`${full[dd.getDay()]} ${dd.getDate()}/${dd.getMonth()+1} · ora per ora`;}}
+  document.querySelectorAll('.day').forEach(el=>el.classList.toggle('sel',+el.dataset.day===n));
+}
+
 /* ---- precipitation chart (SVG) ---- */
 function precipChart(d){
   const now=new Date();let idx=d.hourly.time.findIndex(t=>new Date(t)>=now);if(idx<0)idx=0;
@@ -368,12 +402,6 @@ async function render(d,place){
     {ic:"💧",v:c.relative_humidity_2m+"%",l:"Umidità"},
     {ic:"💨",v:Math.round(c.wind_speed_10m)+" km/h",l:"Vento"},
     {ic:"🔆",v:Math.round(d.daily.uv_index_max[0]),l:"UV max"}];
-  const now=new Date();let idx=d.hourly.time.findIndex(t=>new Date(t)>=now);if(idx<0)idx=0;
-  let hoursHtml="";
-  for(let i=idx;i<idx+12&&i<d.hourly.time.length;i++){
-    const hd=new Date(d.hourly.time[i]),hw=wmo(d.hourly.weather_code[i],d.hourly.is_day[i]),pp=d.hourly.precipitation_probability[i]??0;
-    hoursHtml+=`<div class="hour"><div class="h-t">${i===idx?'Adesso':hd.getHours()+':00'}</div><div class="h-ic">${hw.i}</div><div class="h-tp">${cvt(d.hourly.temperature_2m[i])}°</div><div class="h-pp">${pp>=10?'💧'+pp+'%':''}</div></div>`;
-  }
   const dn=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
   let lo=Math.min(...d.daily.temperature_2m_min),hi=Math.max(...d.daily.temperature_2m_max);
   let daysHtml="";
@@ -381,7 +409,7 @@ async function render(d,place){
     const dd=new Date(d.daily.time[i]),dw=wmo(d.daily.weather_code[i],true),pp=d.daily.precipitation_probability_max[i]??0;
     const lmin=d.daily.temperature_2m_min[i],lmax=d.daily.temperature_2m_max[i];
     const left=((lmin-lo)/(hi-lo||1))*100,wdt=((lmax-lmin)/(hi-lo||1))*100;
-    daysHtml+=`<div class="day"><div class="d-n">${i===0?'Oggi':dn[dd.getDay()]}</div><div class="d-ic">${dw.i}</div><div class="d-pp">${pp>=10?'💧'+pp+'%':''}</div><div class="d-lo">${cvt(lmin)}°</div><div class="d-bar"><i style="left:${left}%;width:${Math.max(wdt,6)}%"></i></div><div class="d-hi">${cvt(lmax)}°</div></div>`;
+    daysHtml+=`<div class="day" data-day="${i}" onclick="selectDay(${i})"><div class="d-n">${i===0?'Oggi':dn[dd.getDay()]}</div><div class="d-ic">${dw.i}</div><div class="d-pp">${pp>=10?'💧'+pp+'%':''}</div><div class="d-lo">${cvt(lmin)}°</div><div class="d-bar"><i style="left:${left}%;width:${Math.max(wdt,6)}%"></i></div><div class="d-hi">${cvt(lmax)}°</div><div class="d-go">›</div></div>`;
   }
   $('#content').innerHTML=`
     <div class="hero">
@@ -399,11 +427,21 @@ async function render(d,place){
     </div>
     <div class="metrics">${metrics.map(m=>`<div class="metric"><div class="m-ic">${m.ic}</div><div class="m-val">${m.v}</div><div class="m-lab">${m.l}</div></div>`).join('')}</div>
     ${precipChart(d)}
-    <div class="sect-t">Prossime ore</div>
-    <div class="hours">${hoursHtml}</div>
-    <div class="sect-t">7 giorni</div>
+    <div class="sect-t" id="hoursTitle">Oggi · ora per ora</div>
+    <div class="hours" id="hours"></div>
+    <input type="range" class="h-slider" id="hSlider" min="0" max="100" value="0" aria-label="Scorri le ore" />
+    <div style="font-size:10.5px;color:var(--muted);text-align:center;margin-top:4px">Trascina lo slider o scorri con il dito →</div>
+    <div class="sect-t">7 giorni · tocca un giorno per l'orario</div>
     <div class="card days">${daysHtml}</div>`;
   $('#aiSrc').textContent = store.k ? 'AI (Groq)' : 'regole locali';
+  selectDay(0); // riempi le ore di oggi
+  // collega slider <-> scorrimento ore
+  const hz=$('#hours'),hs=$('#hSlider');
+  if(hz&&hs){
+    const maxScroll=()=>hz.scrollWidth-hz.clientWidth;
+    hs.addEventListener('input',()=>{const m=maxScroll();if(m>0)hz.scrollLeft=m*(hs.value/100);});
+    hz.addEventListener('scroll',()=>{const m=maxScroll();hs.value=m>0?(hz.scrollLeft/m*100):0;});
+  }
   if(store.k){const txt=await aiAdvice(d,place);if(txt&&$('#adviceTxt'))$('#adviceTxt').textContent=txt;}
 }
 
