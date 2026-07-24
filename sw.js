@@ -1,6 +1,6 @@
 /* Service worker: cache dell'app shell per l'uso offline.
    I dati meteo/radar richiedono internet e non vengono messi in cache. */
-const CACHE = 'che-metto-v2';
+const CACHE = 'che-metto-v3';
 const SHELL = [
   './',
   './index.html',
@@ -8,9 +8,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
-  './icons/apple-touch-icon.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
-  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', e => {
@@ -27,7 +25,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
   // Non intercettare le API dinamiche (meteo, geocoding, radar): sempre dalla rete.
-  if (/open-meteo\.com|bigdatacloud\.net|rainviewer\.com|basemaps\.cartocdn\.com|api\.groq\.com/.test(url)) {
+  if (/open-meteo\.com|bigdatacloud\.net|api\.groq\.com/.test(url)) {
     return;
   }
   // App shell: cache-first, con fallback alla rete e aggiornamento.
