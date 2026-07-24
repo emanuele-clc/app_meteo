@@ -83,6 +83,31 @@
     animation:pop .55s backwards;box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
   .chip.warn{background:rgba(255,183,77,.20);border-color:rgba(255,183,77,.45)}
   .chip.good{background:rgba(120,230,160,.18);border-color:rgba(120,230,160,.45)}
+  /* città preferite */
+  .favs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .favs:empty{display:none}
+  .fav{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;font-size:13px;font-weight:600;
+    background:var(--card);border:1px solid var(--card-brd);backdrop-filter:blur(12px);cursor:pointer}
+  .fav:active{background:rgba(255,255,255,.12)}
+  .fav .fx{color:var(--muted);font-weight:400;font-size:13px;padding:0 2px}
+  .fav .fx:active{color:#fff}
+  .star{margin-left:8px;cursor:pointer;color:#ffd36f;font-size:17px;line-height:1}
+  /* chiedi qualcosa */
+  .ask h3{margin:0 0 10px;font-size:12px;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);font-weight:800}
+  .ask-row{display:flex;gap:8px}
+  .ask-row input{flex:1;padding:12px 15px;border-radius:14px;border:1px solid var(--card-brd);background:rgba(255,255,255,.06);color:var(--txt);font-size:14px;outline:none}
+  .ask-row input::placeholder{color:var(--muted)}
+  .ask-row button{width:46px;border-radius:14px;border:none;background:linear-gradient(180deg,#4a7bff,#2f5efb);color:#fff;font-size:17px;cursor:pointer;flex:0 0 auto}
+  .ask-row button:disabled{opacity:.5}
+  .ask-out{margin-top:12px;font-size:14.5px;line-height:1.55;white-space:pre-wrap}
+  .ask-out.empty{display:none}
+  .ask-out .mini{font-size:12px;color:var(--muted)}
+  .ask-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .ask-chips span{font-size:12px;padding:6px 11px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--card-brd);cursor:pointer}
+  .dots{display:inline-block}
+  .dots i{display:inline-block;width:5px;height:5px;margin:0 1px;border-radius:50%;background:var(--accent);animation:blink 1.2s infinite}
+  .dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
   .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
   .metric{background:var(--card);border:1px solid var(--card-brd);border-radius:18px;padding:14px 6px;text-align:center;
     backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
@@ -165,6 +190,8 @@
     <div class="suggest-list" id="sug"></div>
   </div>
 
+  <div class="favs" id="favs"></div>
+
   <div id="content">
     <div class="loader"><div class="spin"></div><div style="color:var(--muted);font-size:13px">Carico il meteo…</div></div>
   </div>
@@ -197,9 +224,11 @@ const $=s=>document.querySelector(s);
 const store={
   get k(){return localStorage.getItem('groqKey')||''}, set k(v){localStorage.setItem('groqKey',v)},
   get unit(){return localStorage.getItem('unit')||'c'}, set unit(v){localStorage.setItem('unit',v)},
-  get loc(){try{return JSON.parse(localStorage.getItem('loc'))}catch(e){return null}}, set loc(v){localStorage.setItem('loc',JSON.stringify(v))}
+  get loc(){try{return JSON.parse(localStorage.getItem('loc'))}catch(e){return null}}, set loc(v){localStorage.setItem('loc',JSON.stringify(v))},
+  get favs(){try{return JSON.parse(localStorage.getItem('favs'))||[]}catch(e){return []}}, set favs(v){localStorage.setItem('favs',JSON.stringify(v))}
 };
-let STATE=null;
+let STATE=null, CUR=null;
+function samePlace(a,b){return a&&b&&Math.abs(a.lat-b.lat)<0.05&&Math.abs(a.lon-b.lon)<0.05;}
 
 const WMO={
   0:{d:"Sereno",i:"☀️",n:"🌙"},1:{d:"Prevalentemente sereno",i:"🌤️",n:"🌙"},
@@ -329,6 +358,78 @@ async function aiAdvice(d,place){
   }catch(e){console.warn(e);return null;}
 }
 
+/* ---- città preferite ---- */
+function renderFavs(){
+  const el=$('#favs'); if(!el)return;
+  el.innerHTML=store.favs.map(f=>`<span class="fav" data-lat="${f.lat}" data-lon="${f.lon}" data-name="${f.name.replace(/"/g,'')}">📍 ${f.name}<b class="fx">✕</b></span>`).join('');
+}
+function toggleFav(){
+  if(!CUR)return;
+  const favs=store.favs, i=favs.findIndex(f=>samePlace(f,CUR));
+  if(i>=0)favs.splice(i,1); else favs.push({name:CUR.place,lat:CUR.lat,lon:CUR.lon});
+  store.favs=favs; renderFavs();
+  const b=$('#starBtn'); if(b)b.textContent=(i>=0)?'☆':'★';
+  toast(i>=0?'Città rimossa dai preferiti':'Città salvata nei preferiti');
+}
+
+/* ---- chiedi qualcosa ---- */
+function parseHour(q){
+  q=q.toLowerCase();
+  let m=q.match(/\b(?:alle|ore|le)\s*(\d{1,2})(?:[:.](\d{2}))?/)||q.match(/\b(\d{1,2})[:.](\d{2})\b/);
+  if(m)return Math.min(23,parseInt(m[1],10));
+  if(/stamatt|mattin/.test(q))return 9;
+  if(/mezzogiorno|pranzo/.test(q))return 13;
+  if(/pomerigg/.test(q))return 16;
+  if(/stasera|\bsera/.test(q))return 20;
+  if(/stanotte|\bnotte/.test(q))return 23;
+  return null;
+}
+function localAnswer(q){
+  const d=STATE&&STATE.d; if(!d)return "Carico prima il meteo.";
+  const h=parseHour(q);
+  if(h!==null){
+    const today=d.daily.time[0];
+    let idx=d.hourly.time.findIndex(t=>t.slice(0,10)===today&&new Date(t).getHours()===h);
+    if(idx<0)idx=d.hourly.time.findIndex(t=>new Date(t).getHours()===h);
+    if(idx>=0){
+      const tp=d.hourly.temperature_2m[idx],pp=d.hourly.precipitation_probability[idx]??0,wc=wmo(d.hourly.weather_code[idx],d.hourly.is_day[idx]);
+      let s=`Alle ${String(h).padStart(2,'0')}:00 previsti ${wc.d.toLowerCase()}, ${cvt(tp)}°${U()}, pioggia ${pp}%. `;
+      s+= pp>=50?`Meglio uscire con l'ombrello. `:pp>=25?`Tieni un ombrellino per sicurezza. `:`Ombrello non necessario. `;
+      s+= tp<=10?`Vestiti pesante.`:tp<=16?`Giacca leggera.`:tp<=24?`Va bene qualcosa di mezza stagione.`:`Vestiti leggeri.`;
+      return s;
+    }
+  }
+  return "Per domande libere serve la chiave AI gratuita (Impostazioni ⚙️). Intanto, per un orario preciso scrivi ad esempio \"alle 18\" o \"stasera\" e ti dico com'è il meteo a quell'ora.";
+}
+async function askAI(q){
+  const key=store.k; if(!key)return null;
+  const d=STATE&&STATE.d; if(!d)return null;
+  const c=d.current;
+  const now=new Date();let s=d.hourly.time.findIndex(t=>new Date(t)>=now);if(s<0)s=0;
+  const hrs=[];
+  for(let i=s;i<s+24&&i<d.hourly.time.length;i++){const t=new Date(d.hourly.time[i]);hrs.push(`${String(t.getHours()).padStart(2,'0')}:00 ${Math.round(d.hourly.temperature_2m[i])}°C, pioggia ${d.hourly.precipitation_probability[i]??0}%, ${wmo(d.hourly.weather_code[i],d.hourly.is_day[i]).d}`);}
+  const ctx=`Luogo: ${STATE.place}. Adesso: ${wmo(c.weather_code,c.is_day).d}, ${Math.round(c.temperature_2m)}°C (percepiti ${Math.round(c.apparent_temperature)}°C), vento ${Math.round(c.wind_speed_10m)} km/h, UV max oggi ${d.daily.uv_index_max[0]}.\nProssime 24h:\n${hrs.join('\n')}`;
+  try{
+    const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+      body:JSON.stringify({model:"llama-3.3-70b-versatile",temperature:0.5,max_tokens:220,messages:[
+        {role:"system",content:"Sei un assistente meteo pratico. Rispondi in italiano, breve (max 3 frasi), concreto e diretto. Usa i dati meteo forniti, soprattutto quelli orari se la domanda riguarda un orario o un confronto tra momenti della giornata. Niente elenchi puntati."},
+        {role:"user",content:ctx+"\n\nDomanda: "+q}]})});
+    if(!r.ok)throw new Error(r.status);
+    const j=await r.json();return (j.choices&&j.choices[0]&&j.choices[0].message.content||"").trim()||null;
+  }catch(e){console.warn(e);return null;}
+}
+async function ask(q){
+  const inp=$('#askIn'); q=(q||(inp&&inp.value)||'').trim(); if(!q)return;
+  if(inp)inp.value=q;
+  const out=$('#askOut'); if(!out)return;
+  out.classList.remove('empty');
+  out.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
+  let ans=null;
+  if(store.k)ans=await askAI(q);
+  if(!ans)ans=localAnswer(q);
+  out.textContent=ans;
+}
+
 /* ---- ore per giorno ---- */
 function buildHoursHTML(d,indices,firstIsNow){
   let html="";
@@ -411,9 +512,10 @@ async function render(d,place){
     const left=((lmin-lo)/(hi-lo||1))*100,wdt=((lmax-lmin)/(hi-lo||1))*100;
     daysHtml+=`<div class="day" data-day="${i}" onclick="selectDay(${i})"><div class="d-n">${i===0?'Oggi':dn[dd.getDay()]}</div><div class="d-ic">${dw.i}</div><div class="d-pp">${pp>=10?'💧'+pp+'%':''}</div><div class="d-lo">${cvt(lmin)}°</div><div class="d-bar"><i style="left:${left}%;width:${Math.max(wdt,6)}%"></i></div><div class="d-hi">${cvt(lmax)}°</div><div class="d-go">›</div></div>`;
   }
+  const isFav=store.favs.some(f=>samePlace(f,CUR));
   $('#content').innerHTML=`
     <div class="hero">
-      <div class="place"><span>📍</span>${place}</div>
+      <div class="place"><span>📍</span>${place}<b class="star" id="starBtn" title="Salva città">${isFav?'★':'☆'}</b></div>
       <div class="bigicon">${w.i}</div>
       <div class="temp">${cvt(c.temperature_2m)}<sup>°${U()}</sup></div>
       <div class="cond">${w.d}</div>
@@ -425,6 +527,19 @@ async function render(d,place){
       <p id="adviceTxt">${rl.text}</p>
       <div class="chips">${rl.chips.map((x,n)=>`<span class="chip ${x.c}" style="animation-delay:${n*60}ms">${x.e} ${x.t}</span>`).join('')}</div>
     </div>
+    <div class="card ask">
+      <h3>Chiedi qualcosa</h3>
+      <div class="ask-row">
+        <input id="askIn" type="text" placeholder="Es. porto l'ombrello alle 18?" autocomplete="off" />
+        <button id="askBtn" title="Chiedi">➤</button>
+      </div>
+      <div class="ask-chips">
+        <span>Porto l'ombrello oggi?</span>
+        <span>Come mi vesto stasera?</span>
+        <span>Meglio uscire ora o nel pomeriggio?</span>
+      </div>
+      <div id="askOut" class="ask-out empty"></div>
+    </div>
     <div class="metrics">${metrics.map(m=>`<div class="metric"><div class="m-ic">${m.ic}</div><div class="m-val">${m.v}</div><div class="m-lab">${m.l}</div></div>`).join('')}</div>
     ${precipChart(d)}
     <div class="sect-t" id="hoursTitle">Oggi · ora per ora</div>
@@ -434,6 +549,11 @@ async function render(d,place){
     <div class="sect-t">7 giorni · tocca un giorno per l'orario</div>
     <div class="card days">${daysHtml}</div>`;
   $('#aiSrc').textContent = store.k ? 'AI (Groq)' : 'regole locali';
+  const starBtn=$('#starBtn'); if(starBtn)starBtn.onclick=toggleFav;
+  const askBtn=$('#askBtn'),askIn=$('#askIn');
+  if(askBtn){askBtn.onclick=()=>ask();}
+  if(askIn){askIn.addEventListener('keydown',e=>{if(e.key==='Enter')ask();});}
+  document.querySelectorAll('.ask-chips span').forEach(sp=>sp.onclick=()=>ask(sp.textContent));
   selectDay(0); // riempi le ore di oggi
   // collega slider <-> scorrimento ore
   const hz=$('#hours'),hs=$('#hSlider');
@@ -451,6 +571,7 @@ async function load(lat,lon,place){
     if(!place)place=await reverse(lat,lon);
     const d=await getWeather(lat,lon);
     store.loc={lat,lon,place};
+    CUR={lat,lon,place};
     await render(d,place);
   }catch(e){$('#content').innerHTML=`<div class="card"><p>😕 Non riesco a caricare il meteo. Controlla la connessione e riprova.</p></div>`;console.error(e);}
 }
@@ -480,6 +601,18 @@ $('#setBtn').onclick=()=>{$('#key').value=store.k;$('#unit').value=store.unit;$(
 $('#closeSet').onclick=()=>$('#modal').classList.remove('show');
 $('#saveSet').onclick=()=>{store.k=$('#key').value.trim();store.unit=$('#unit').value;$('#modal').classList.remove('show');toast("Impostazioni salvate");if(STATE&&STATE.d)render(STATE.d,STATE.place);};
 $('#locBtn').onclick=useGPS;
+
+$('#favs').addEventListener('click',e=>{
+  const chip=e.target.closest('.fav'); if(!chip)return;
+  const lat=+chip.dataset.lat, lon=+chip.dataset.lon;
+  if(e.target.classList.contains('fx')){
+    store.favs=store.favs.filter(f=>!samePlace(f,{lat,lon})); renderFavs();
+    const b=$('#starBtn'); if(b&&CUR&&samePlace(CUR,{lat,lon}))b.textContent='☆';
+    return;
+  }
+  load(lat,lon,chip.dataset.name);
+});
+renderFavs();
 
 (function boot(){const l=store.loc;if(l)load(l.lat,l.lon,l.place);useGPS();})();
 
