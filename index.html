@@ -307,41 +307,49 @@ async function aiAdvice(d,place){
 }
 
 /* ---- RainViewer radar ---- */
-let MAP,marker,radarFrames=[],radarLayers={},radarIdx=0,radarTimer=null,radarPlaying=true;
+let MAP,marker,radarFrames=[],radarLayers=[],radarPast=0,radarIdx=0,radarTimer=null,radarPlaying=true,radarLoaded=0;
+function fixMapSize(){if(MAP){try{MAP.invalidateSize(false)}catch(e){}}}
 async function initRadar(lat,lon){
   if(!MAP){
-    MAP=L.map('map',{zoomControl:false,attributionControl:false}).setView([lat,lon],7);
+    MAP=L.map('map',{zoomControl:false,attributionControl:false,fadeAnimation:false}).setView([lat,lon],7);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(MAP);
     L.control.zoom({position:'topright'}).addTo(MAP);
+    MAP.whenReady(fixMapSize);
   }else{MAP.setView([lat,lon],7);}
+  // il contenitore va misurato dopo il layout, altrimenti le tile restano grigie
+  setTimeout(fixMapSize,150); setTimeout(fixMapSize,600); setTimeout(fixMapSize,1200);
   if(marker)marker.remove();
   marker=L.circleMarker([lat,lon],{radius:7,color:'#fff',weight:2,fillColor:'#315efb',fillOpacity:1}).addTo(MAP);
+  clearInterval(radarTimer);
+  radarLayers.forEach(l=>{try{MAP.removeLayer(l)}catch(e){}}); radarLayers=[]; radarFrames=[]; radarLoaded=0;
+  const lb=$('#rLab'); if(lb)lb.textContent='carico…';
   try{
     const meta=await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
-    const host=meta.host; const past=meta.radar.past||[]; const now=meta.radar.nowcast||[];
-    radarFrames=past.concat(now).map(f=>({t:f.time,url:`${host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`}));
-    for(const k in radarLayers){radarLayers[k].remove();} radarLayers={};
+    const host=meta.host, past=meta.radar.past||[], now=meta.radar.nowcast||[];
+    radarFrames=past.concat(now); radarPast=past.length;
+    // precarico tutti i fotogrammi (nascosti) per un'animazione fluida
+    radarLayers=radarFrames.map(f=>{
+      const t=L.tileLayer(`${host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:0,zIndex:400,crossOrigin:true});
+      t.on('load',()=>{radarLoaded++;});
+      return t.addTo(MAP);
+    });
     radarIdx=Math.max(0,past.length-1);
     playRadar(true);
-  }catch(e){console.warn('radar',e);}
+  }catch(e){console.warn('radar',e); if(lb)lb.textContent='non disponibile';}
 }
 function showRadar(i){
   if(!radarFrames.length)return;
   radarIdx=(i+radarFrames.length)%radarFrames.length;
-  const f=radarFrames[radarIdx];
-  if(!radarLayers[radarIdx]){radarLayers[radarIdx]=L.tileLayer(f.url,{opacity:0,zIndex:5}).addTo(MAP);}
-  for(const k in radarLayers){radarLayers[k].setOpacity(+k===radarIdx?0.7:0);}
-  const dt=new Date(f.t*1000);
-  const now=Date.now()/1000;
-  const lab=f.t>now?'previsione':'passato';
-  const el=$('#rTime'); if(el){el.textContent=dt.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});}
-  const lb=$('#rLab'); if(lb)lb.textContent=lab;
+  radarLayers.forEach((l,k)=>l.setOpacity(k===radarIdx?0.75:0));
+  const f=radarFrames[radarIdx],dt=new Date(f.t*1000);
+  const el=$('#rTime'); if(el)el.textContent=dt.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  const lb=$('#rLab'); if(lb)lb.textContent=(radarIdx>=radarPast)?'previsione':(radarIdx===radarPast-1?'adesso':'passato');
   const fill=$('#rFill'); if(fill)fill.style.width=((radarIdx+1)/radarFrames.length*100)+'%';
 }
 function playRadar(p){
   radarPlaying=p; clearInterval(radarTimer);
   const b=$('#rPlay'); if(b)b.textContent=p?'⏸':'▶';
-  if(p){radarTimer=setInterval(()=>showRadar(radarIdx+1),700);}
+  if(p){radarTimer=setInterval(()=>showRadar(radarIdx+1),850);}
   showRadar(radarIdx);
 }
 
@@ -396,6 +404,7 @@ async function render(d,place){
         <span class="r-lab" id="rLab">passato</span>
       </div>
     </div>
+    <div style="font-size:11px;color:var(--muted);margin:8px 4px 0;line-height:1.5">Le aree colorate = pioggia (verde debole → rosso intensa). Se la mappa resta scura, non piove nella zona. Puoi trascinare e zoomare.</div>
     <div class="sect-t">Prossime ore</div>
     <div class="hours">${hoursHtml}</div>
     <div class="sect-t">7 giorni</div>
@@ -443,6 +452,8 @@ $('#saveSet').onclick=()=>{store.k=$('#key').value.trim();store.unit=$('#unit').
 $('#locBtn').onclick=useGPS;
 
 (function boot(){const l=store.loc;if(l)load(l.lat,l.lon,l.place);useGPS();})();
+
+addEventListener('resize',()=>fixMapSize());
 
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e));});}
 </script>

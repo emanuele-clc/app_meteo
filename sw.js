@@ -1,6 +1,6 @@
 /* Service worker: cache dell'app shell per l'uso offline.
    I dati meteo/radar richiedono internet e non vengono messi in cache. */
-const CACHE = 'che-metto-v1';
+const CACHE = 'che-metto-v2';
 const SHELL = [
   './',
   './index.html',
